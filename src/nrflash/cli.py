@@ -44,19 +44,25 @@ import sys
 import time
 import traceback
 
-import usb_device
-import rom_loader
-import cdc_reset
-import uart_reset
-import stub_flasher_data
+from . import usb_device
+from . import rom_loader
+from . import cdc_reset
+from . import uart_reset
+from . import stub_flasher_data
 
 CHUNK = rom_loader.FLASH_WRITE_SIZE  # ROM-only fallback block size; cmd_write
 # switches to rom_loader.STUB_FLASH_WRITE_SIZE for the session if stub
 # upload succeeds.
 CHIP_CHOICES = ("esp32s3", "esp32c3", "esp32s2", "esp32", "esp8266")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# Log/state data lives under the user's home, not next to the installed
+# package - site-packages (or Termux's $PREFIX/lib/python*/site-packages)
+# isn't guaranteed writable once this is pip-installed rather than run
+# from a flat checkout.
+DATA_DIR = os.environ.get(
+    "NRFLASH_DATA_DIR",
+    os.path.join(os.path.expanduser("~"), ".nrflash"),
+)
 LOG_FILE = os.path.join(DATA_DIR, "nrflash.log")
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -677,8 +683,11 @@ def bootstrap(argv_tail: list) -> None:
         _log("[-] Permission denied or timed out.")
         sys.exit(1)
 
-    self_path = os.path.abspath(__file__)
-    cmd = f"python3 {self_path} " + " ".join(argv_tail)
+    # Re-invoke via `python3 -m nrflash.cli ...` rather than a hardcoded
+    # source path - works identically whether this is a flat checkout or
+    # a pip-installed package (site-packages path still resolves fine for
+    # -m, but this also survives future packaging changes like zipapps).
+    cmd = f"{sys.executable} -m nrflash.cli " + " ".join(argv_tail)
 
     child_pid, child_done, tail_thread = usb_device.launch_with_fd(
         cmd=cmd,

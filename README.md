@@ -88,10 +88,24 @@ reach.
 
 ```bash
 pkg update && pkg install python termux-api libusb
-pip install pyusb
+pip install nrflash
 ```
 
-Termux:API app from F-Droid (not Play Store) must be installed.
+`pip install nrflash` pulls in `pyusb` automatically. `termux-api` and
+`libusb` are system packages `pip` can't install for you — they still need
+`pkg install`, and the **Termux:API** app from
+[F-Droid](https://f-droid.org) (not the Play Store) must be installed
+separately for the no-root USB-permission flow to work at all.
+
+<details>
+<summary>Installing from source instead</summary>
+
+```bash
+git clone https://github.com/7wp81x/Termux-ESP-Flasher
+cd Termux-ESP-Flasher
+pip install .
+```
+</details>
 
 ## Usage
 
@@ -162,19 +176,23 @@ at `0x0` is all you need.
 ## Files
 
 ```
-nrflash               # exec shim, chmod +x and run this
-nrflash.py            # CLI: argv parsing, fd bootstrap, flash/verify/probe commands
-rom_loader.py         # SLIP framing + ROM bootloader command/response protocol,
-                       # chip auto-detection, baud-change command
-usb_device.py         # USB backend detection, fd wrapping, UART-bridge register
-                       # init/baud reprogramming, endpoint discovery
-cdc_reset.py          # native-USB-CDC bootloader entry/exit (DTR/RTS bit tricks)
-uart_reset.py         # UART-bridge bootloader entry/exit (DTR/RTS pulse pattern)
-stub_flasher_data.py  # vendored ESP-IDF RAM stub binaries (Apache-2.0/MIT, Espressif)
+src/nrflash/
+  __init__.py          package version
+  __main__.py          enables `python3 -m nrflash.cli`
+  cli.py               CLI: argv parsing, fd bootstrap, flash/verify/probe commands
+  rom_loader.py        SLIP framing + ROM bootloader command/response protocol,
+                        chip auto-detection, baud-change command
+  usb_device.py        USB backend detection, fd wrapping, UART-bridge register
+                        init/baud reprogramming, endpoint discovery
+  cdc_reset.py         native-USB-CDC bootloader entry/exit (DTR/RTS bit tricks)
+  uart_reset.py        UART-bridge bootloader entry/exit (DTR/RTS pulse pattern)
+  stub_flasher_data.py vendored ESP-IDF RAM stub binaries (Apache-2.0/MIT, Espressif)
 ```
 
-All files must live in the same directory — there's no packaging/install
-step, it's a flat script.
+`pip install nrflash` puts a `nrflash` console script on `PATH` — no
+`chmod +x`, no flat-directory requirement. Log/state files live under
+`~/.nrflash` (override with `NRFLASH_DATA_DIR`) rather than next to the
+installed package, since site-packages isn't guaranteed writable.
 
 ## Troubleshooting
 

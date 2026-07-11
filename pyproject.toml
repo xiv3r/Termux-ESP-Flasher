@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nrflash"
+version = "1.0.0"
+description = "Termux-native .bin flasher for ESP32/ESP8266 boards — no root, no esptool.py subprocess, no pyserial."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "Apache-2.0"
+license-files = ["LICENSE-APACHE", "STUB_LICENSE-APACHE", "STUB_LICENSE-MIT"]
+authors = [
+    { name = "7wp81x" }
+]
+keywords = ["esp32", "esp8266", "termux", "flasher", "esptool", "no-root", "android"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Android",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: System :: Hardware",
+]
+dependencies = [
+    "pyusb>=1.2.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/7wp81x/Termux-ESP-Flasher"
+Repository = "https://github.com/7wp81x/Termux-ESP-Flasher"
+Issues = "https://github.com/7wp81x/Termux-ESP-Flasher/issues"
+
+[project.scripts]
+nrflash = "nrflash.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
