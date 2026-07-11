@@ -110,31 +110,32 @@ pip install .
 ## Usage
 
 ```bash
+chmod +x nrflash
 
 # --chip is optional everywhere except erase-info - omit it to auto-detect
-nrflash probe
-nrflash write --offset 0x0 firmware.bin
+./nrflash probe
+./nrflash write --offset 0x0 firmware.bin
 
 # Still works if you want to force a specific chip
-nrflash write --chip esp32c3 --offset 0x0 firmware.bin
+./nrflash write --chip esp32c3 --offset 0x0 firmware.bin
 
 # Flash + MD5-verify against the device afterward
-nrflash write --chip esp32s3 --offset 0x0 firmware.bin --verify
+./nrflash write --chip esp32s3 --offset 0x0 firmware.bin --verify
 
 # Flash a sub-image at a partition offset (e.g. app partition only)
-nrflash write --offset 0x10000 app.bin
+./nrflash write --offset 0x10000 app.bin
 
 # Flash bootloader + partition table + app in one session
-nrflash write 0x0:bootloader.bin 0x8000:partitions.bin 0x10000:app.bin
+./nrflash write 0x0:bootloader.bin 0x8000:partitions.bin 0x10000:app.bin
 
 # Stand-alone MD5 check against a file already on disk
-nrflash verify --chip esp32c3 --offset 0x0 firmware.bin
+./nrflash verify --chip esp32c3 --offset 0x0 firmware.bin
 
 # Explicitly erase the write range first via ERASE_REGION
-nrflash write --offset 0x0 firmware.bin --erase
+./nrflash write --offset 0x0 firmware.bin --erase
 
 # Stay in the bootloader after flashing instead of rebooting
-nrflash write --offset 0x0 firmware.bin --no-reboot
+./nrflash write --offset 0x0 firmware.bin --no-reboot
 ```
 
 First run on no-root Termux pops the same USB permission dialog every
@@ -181,12 +182,16 @@ src/nrflash/
   cli.py               CLI: argv parsing, fd bootstrap, flash/verify/probe commands
   rom_loader.py        SLIP framing + ROM bootloader command/response protocol,
                         chip auto-detection, baud-change command
-  usb_device.py        USB backend detection, fd wrapping, UART-bridge register
-                        init/baud reprogramming, endpoint discovery
   cdc_reset.py         native-USB-CDC bootloader entry/exit (DTR/RTS bit tricks)
   uart_reset.py        UART-bridge bootloader entry/exit (DTR/RTS pulse pattern)
   stub_flasher_data.py vendored ESP-IDF RAM stub binaries (Apache-2.0/MIT, Espressif)
 ```
+
+USB backend detection, fd wrapping, and UART-bridge register access come
+from the [`espbridge`](https://github.com/7wp81x/ESP-Bridge) package
+(installed automatically as a dependency) rather than a vendored
+`usb_device.py` — this keeps the tricky no-root Termux fd-bootstrap logic
+in one place, shared with other tools instead of copy-pasted per repo.
 
 `pip install nrflash` puts a `nrflash` console script on `PATH` — no
 `chmod +x`, no flat-directory requirement. Log/state files live under

@@ -44,7 +44,7 @@ import sys
 import time
 import traceback
 
-from . import usb_device
+import espbridge as usb_device
 from . import rom_loader
 from . import cdc_reset
 from . import uart_reset

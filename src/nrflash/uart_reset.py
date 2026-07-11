@@ -23,7 +23,7 @@ devkit that has one - NodeMCU, Wemos, DOIT, etc.):
 
 import time
 
-from . import usb_device
+import espbridge as usb_device
 
 
 def enter_bootloader(device, settle: float = 0.3, attempts: int = 3):
