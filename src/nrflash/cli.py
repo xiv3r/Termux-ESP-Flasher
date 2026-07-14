@@ -50,7 +50,7 @@ from . import cdc_reset
 from . import uart_reset
 from . import stub_flasher_data
 
-__version__ = "1.2.0"
+__version__ = "1.3.1"
 __author__ = "7wp81x"
 __url__ = "https://github.com/7wp81x/Termux-ESP-Flasher"
 
@@ -153,6 +153,31 @@ def acquire_device():
         reset = cdc_reset
 
     return device, ep_in, ep_out, reset
+
+
+def enter_bootloader_and_sync(device, loader, reset, attempts: int = 3) -> bool:
+    """
+    Pulse the reset sequence and sync with the ROM bootloader, retrying
+    the *whole* reset+sync dance a few times before giving up.
+
+    A single reset pulse can land at the wrong point in the chip's boot
+    cycle - e.g. mid-boot, or user firmware that hasn't started polling
+    the CDC control lines yet - and just get ignored, causing sync() to
+    fail even though the device is otherwise fine. This is the same
+    reason PlatformIO/esptool uploads often fail once with a bare
+    "Connecting......." timeout and then succeed immediately on a second
+    run without you doing anything differently: re-issuing the reset
+    pulse a second time usually lands cleanly. Looping here does that
+    automatically instead of making you re-run nrflash by hand.
+    """
+    for attempt in range(1, attempts + 1):
+        reset.enter_bootloader(device)
+        if loader.sync():
+            return True
+        if attempt < attempts:
+            _log(f"\033[1;31m[!]\033[0m No response on attempt \033[1;33m{attempt}/{attempts}\033[0m - "
+                 f"retrying reset pulse...")
+    return False
 
 
 def make_read_write(device, ep_in: int, ep_out: int):
@@ -267,14 +292,11 @@ def resolve_chip(loader, chip_arg, is_bridge: bool) -> str:
 
 def cmd_probe(chip: str):
     device, ep_in, ep_out, reset = acquire_device()
-    _log("\033[1;34m[*]\033[0m Resetting into ROM bootloader...")
-    reset.enter_bootloader(device)
-
     read_fn, write_fn = make_read_write(device, ep_in, ep_out)
     loader = rom_loader.RomLoader(read_fn, write_fn, chip or "esp32")
 
-    _log("\033[1;34m[*]\033[0m Syncing with ROM bootloader...")
-    if not loader.sync():
+    _log("\033[1;34m[*]\033[0m Resetting into ROM bootloader...")
+    if not enter_bootloader_and_sync(device, loader, reset):
         _log("\033[1;36m[-]\033[0m No response from bootloader. Checks:")
         if reset is uart_reset:
             _log("      - Is the CH340/CP2102/FTDI bridge wired to EN+GPIO0 (auto-reset)?")
@@ -320,14 +342,11 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
         _log(f"\033[1;34m[*]\033[0m \033[1;33m{path}\033[0m: \033[1;32m{len(data)} bytes\033[0m -> \033[1;36moffset 0x{offset:06X}\033[0m")
 
     device, ep_in, ep_out, reset = acquire_device()
-    _log("\033[1;34m[*]\033[0m Resetting into ROM bootloader...")
-    reset.enter_bootloader(device)
-
     read_fn, write_fn = make_read_write(device, ep_in, ep_out)
     loader = rom_loader.RomLoader(read_fn, write_fn, chip or "esp32")
 
-    _log("\033[1;34m[*]\033[0m Syncing with ROM bootloader...")
-    if not loader.sync():
+    _log("\033[1;34m[*]\033[0m Resetting into ROM bootloader...")
+    if not enter_bootloader_and_sync(device, loader, reset):
         _log("\033[1;36m[-]\033[0m Sync failed - device did not respond as a ROM bootloader.")
         reset.reset_to_app(device)
         sys.exit(1)
@@ -378,8 +397,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
             if usb_device.is_uart_bridge(device):
                 def _rebuild_session_at_115200():
                     usb_device.set_uart_bridge_baud(device, 115200)
-                    reset.enter_bootloader(device)
-                    if not loader.sync():
+                    if not enter_bootloader_and_sync(device, loader, reset):
                         return False
                     loader.spi_attach()
                     return loader.upload_stub(stub)
@@ -396,7 +414,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                         ok = False
 
                     if ok:
-                        _log(f"\033[1;32m[+]\033[0m Baud rate raised to \033[0;32m{candidate}\0330m and "
+                        _log(f"\033[1;32m[+]\033[0m Baud rate raised to \033[1;32m{candidate}\033[0m and "
                              "verified - stub was still capped at the "
                              "bridge's original 115200 baud (~11.5 KB/s) "
                              "even after uploading.")
@@ -424,7 +442,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
 
     for offset, path, data in loaded:
         total = len(data)
-        _log(f"\033[1;34m[*]\033[0m \033[1;32m{path}\033[0m @ \033[1;36m0x{offset:06X}\033[0m")
+        _log(f"\033[1;34m[*]\033[0m --- \033[1;32m{path}\033[0m @ \033[1;36m0x{offset:06X}\033[0m ---")
 
         if erase:
             _log(f"\033[1;34m[*]\033[0m Erasing \033[1;36m0x{offset:06X}-0x{offset+total:06X}\033[0m via ERASE_REGION...")
@@ -456,7 +474,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
 
         elapsed = time.time() - t0
         rate = (total / 1024) / elapsed if elapsed > 0 else 0
-        _log(f"\n\033[1;32m[+]\033[0m Wrote \033[1;33m{total}\033[0m bytes in {elapsed:.1f}s ({rate:.1f} KB/s)")
+        _log(f"\033[1;32m[+]\033[0m Wrote \033[1;33m{total}\033[0m bytes in {elapsed:.1f}s ({rate:.1f} KB/s)")
 
         if verify:
             _log("\033[1;34m[*]\033[0m Verifying via on-device MD5...")
@@ -492,12 +510,11 @@ def cmd_verify(chip: str, offset: int, path: str):
     local_md5 = hashlib.md5(data).hexdigest()
 
     device, ep_in, ep_out, reset = acquire_device()
-    reset.enter_bootloader(device)
     read_fn, write_fn = make_read_write(device, ep_in, ep_out)
     loader = rom_loader.RomLoader(read_fn, write_fn, chip or "esp32")
 
     _log("\033[1;34m[*]\033[0m Syncing with ROM bootloader...")
-    if not loader.sync():
+    if not enter_bootloader_and_sync(device, loader, reset):
         _log("\033[1;36m[-]\033[0m Sync failed.")
         reset.reset_to_app(device)
         sys.exit(1)

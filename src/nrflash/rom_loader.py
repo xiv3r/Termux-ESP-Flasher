@@ -417,6 +417,15 @@ class RomLoader:
         # "unsupported" failure due to a slow chip.
         self._command(CMD_ERASE_REGION, data, timeout=60.0, retries=1)
 
+    # Empirically-generous margin for the ROM's synchronous erase-before-reply
+    # inside flash_begin: a plain NOR flash erase runs at roughly 40-80s/MB
+    # worst case (bigger/older parts, no stub speed-up), so scale the
+    # timeout with erase size rather than using one fixed value that only
+    # works for small writes. Matches the spirit of real esptool's
+    # ERASE_WRITE_TIMEOUT_PER_MB, re-derived rather than copied.
+    ERASE_TIMEOUT_PER_MB = 60.0
+    MIN_ERASE_TIMEOUT = 10.0
+
     def flash_begin(self, size: int, offset: int, block_size: int = FLASH_WRITE_SIZE):
         num_blocks = (size + block_size - 1) // block_size
         erase_size = num_blocks * block_size
@@ -427,7 +436,9 @@ class RomLoader:
         # param format. Matches real esptool's same chip/is_stub check.
         if self.is_stub or self.chip not in ("esp32", "esp8266"):
             data += struct.pack("<I", 0)
-        self._command(CMD_FLASH_BEGIN, data, timeout=10.0)
+        erase_mb = erase_size / (1024 * 1024)
+        timeout = max(self.MIN_ERASE_TIMEOUT, erase_mb * self.ERASE_TIMEOUT_PER_MB)
+        self._command(CMD_FLASH_BEGIN, data, timeout=timeout)
 
     def flash_block(self, data: bytes, seq: int, block_size: int = FLASH_WRITE_SIZE):
         if len(data) < block_size:
