@@ -35,6 +35,8 @@ peripheral, not the user sketch.
 
 import time
 
+import espbridge as usb_device
+
 # bmRequestType for CDC class-specific request, host->device
 _CDC_REQTYPE = 0x21
 _SET_CONTROL_LINE_STATE = 0x22
@@ -44,12 +46,39 @@ _DTR = 0x01
 _RTS = 0x02
 
 
-def _set_line_state(device, dtr: bool, rts: bool):
+def _set_line_state(device, dtr: bool, rts: bool, control_interface: int = 0):
     value = (_DTR if dtr else 0) | (_RTS if rts else 0)
-    # wIndex is the CDC control interface number; native ESP32 USB CDC
-    # always exposes it as interface 0 (data class lives on interface 1,
-    # matched by get_cdc_endpoints()'s native-CDC branch).
-    device.ctrl_transfer(_CDC_REQTYPE, _SET_CONTROL_LINE_STATE, value, 0, None)
+    # wIndex is the CDC control interface number. This is NOT always 0:
+    # boards that expose more than plain CDC (e.g. ESP32-S3 with the
+    # USB-JTAG interface active) can push JTAG to interface 0 and shift
+    # CDC control/data to 1/2 instead. Hardcoding 0 here silently targets
+    # the wrong interface on those boards. usb_device.py's
+    # find_cdc_control_interface() (called from enter_bootloader()/
+    # reset_to_app() below) figures out the right number from the
+    # device's actual descriptors, same fix already applied to
+    # open_native_cdc_port().
+    device.ctrl_transfer(_CDC_REQTYPE, _SET_CONTROL_LINE_STATE, value, control_interface, None)
+
+
+def _control_interface(device) -> int:
+    """
+    Resolve the CDC control interface number for `device`.
+
+    get_cdc_endpoints() returns the *data* interface (hardcoded to 1 for
+    native ESP32 USB CDC), which is only the control interface's neighbor
+    by convention - not guaranteed on boards that also expose USB-JTAG,
+    where JTAG can occupy interface 0 and push CDC control/data to 1/2.
+    find_cdc_control_interface() reads the actual descriptors instead of
+    assuming, same fix already applied to open_native_cdc_port().
+    Falls back to 0 (the common case) if endpoint discovery fails for
+    any reason - better to try the old hardcoded behavior than crash a
+    reset that was working before this change.
+    """
+    try:
+        _, _, data_iface = usb_device.get_cdc_endpoints(device)
+        return usb_device.find_cdc_control_interface(device, data_iface)
+    except Exception:
+        return 0
 
 
 def enter_bootloader(device, settle: float = 0.3):
@@ -70,12 +99,13 @@ def enter_bootloader(device, settle: float = 0.3):
     the host controller settling — harmless to repeat, the chip is already
     held in reset for the duration.
     """
+    ctrl_iface = _control_interface(device)
     for _ in range(2):
-        _set_line_state(device, dtr=True, rts=False)
+        _set_line_state(device, dtr=True, rts=False, control_interface=ctrl_iface)
         time.sleep(0.05)
-        _set_line_state(device, dtr=False, rts=True)
+        _set_line_state(device, dtr=False, rts=True, control_interface=ctrl_iface)
         time.sleep(0.05)
-        _set_line_state(device, dtr=False, rts=False)
+        _set_line_state(device, dtr=False, rts=False, control_interface=ctrl_iface)
         time.sleep(0.05)
     time.sleep(settle)
 
@@ -90,7 +120,8 @@ def reset_to_app(device, settle: float = 0.5):
       2. DTR=0, RTS=0 -> EN released, BOOT high (not sampled)
                          -> boots the flashed application, not the ROM loader
     """
-    _set_line_state(device, dtr=True, rts=True)
+    ctrl_iface = _control_interface(device)
+    _set_line_state(device, dtr=True, rts=True, control_interface=ctrl_iface)
     time.sleep(0.1)
-    _set_line_state(device, dtr=False, rts=False)
+    _set_line_state(device, dtr=False, rts=False, control_interface=ctrl_iface)
     time.sleep(settle)

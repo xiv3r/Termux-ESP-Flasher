@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nrflash"
-version = "1.1.0"
+version = "1.2.0"
 description = "Termux-native .bin flasher for ESP32/ESP8266 boards — no root, no esptool.py subprocess, no pyserial."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -26,7 +26,7 @@ classifiers = [
     "Topic :: System :: Hardware",
 ]
 dependencies = [
-    "espbridge>=1.0.0",
+    "espbridge>=1.1.0",
 ]
 
 [project.urls]

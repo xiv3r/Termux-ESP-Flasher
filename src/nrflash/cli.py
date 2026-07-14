@@ -50,6 +50,10 @@ from . import cdc_reset
 from . import uart_reset
 from . import stub_flasher_data
 
+__version__ = "1.2.0"
+__author__ = "7wp81x"
+__url__ = "https://github.com/7wp81x/Termux-ESP-Flasher"
+
 CHUNK = rom_loader.FLASH_WRITE_SIZE  # ROM-only fallback block size; cmd_write
 # switches to rom_loader.STUB_FLASH_WRITE_SIZE for the session if stub
 # upload succeeds.
@@ -130,7 +134,7 @@ def acquire_device():
         device = usb_device.wrap_direct()
         fd_wrapped = False
 
-    _log(f"[*] Device: {usb_device.describe_device(device)}")
+    _log(f"\033[1;34m[*]\033[0m Device: \033[1;32m{usb_device.describe_device(device)}\033[0m")
     ep_in, ep_out, iface = usb_device.get_cdc_endpoints(device)
     usb_device.claim_device(device, iface, fd_wrapped=fd_wrapped)
     usb_device.reset_endpoint_toggles(device, ep_in, ep_out)
@@ -142,7 +146,7 @@ def acquire_device():
         # set_dtr_rts() primitive, not by the pulse baked into
         # init_uart_bridge() (that pulse assumes "release to normal boot",
         # which isn't always what the caller wants next).
-        _log("[*] UART bridge detected - configuring line coding...")
+        _log("\033[1;34m[*]\033[0m UART bridge detected - configuring line coding...")
         usb_device.init_uart_bridge(device)
         reset = uart_reset
     else:
@@ -230,7 +234,7 @@ def resolve_chip(loader, chip_arg, is_bridge: bool) -> str:
         loader.chip = chip_arg
         return chip_arg
 
-    _log("[*] No --chip given - auto-detecting from ROM magic value...")
+    _log("\033[1;34m[*]\033[0m No --chip given - auto-detecting from ROM magic value...")
     magic = loader.read_reg(rom_loader.CHIP_MAGIC_REG_ADDR)
     detected = rom_loader.KNOWN_MAGIC.get(magic)
     if detected is None:
@@ -248,30 +252,30 @@ def resolve_chip(loader, chip_arg, is_bridge: bool) -> str:
     bridge_family = {"esp32", "esp8266"}
     usb_family = {"esp32s2", "esp32s3", "esp32c3"}
     if is_bridge and detected not in bridge_family:
-        _log(f"[!] Warning: detected '{detected}' but device is behind a "
+        _log(f"\033[1;31m[!]\033[0m Warning: detected \033[1;33m'{detected}'\033[0m but device is behind a "
              "UART bridge - unexpected combination. Double check with an "
              "explicit --chip if flashing misbehaves.")
     elif not is_bridge and detected not in usb_family:
-        _log(f"[!] Warning: detected '{detected}' but device is native "
+        _log(f"\033[1;31m[!]\033[0m Warning: detected \033[1;33m'{detected}'\033[0m but device is native "
              "USB CDC - unexpected combination. Double check with an "
              "explicit --chip if flashing misbehaves.")
 
     loader.chip = detected
-    _log(f"[+] Auto-detected chip: {detected}  (magic 0x{magic:08X})")
+    _log(f"\033[1;32m[+]\033[0m Auto-detected chip: \033[1;32m{detected}\033[0m  (magic \033[1;36m0x{magic:08X}\033[0m)")
     return detected
 
 
 def cmd_probe(chip: str):
     device, ep_in, ep_out, reset = acquire_device()
-    _log("[*] Resetting into ROM bootloader...")
+    _log("\033[1;34m[*]\033[0m Resetting into ROM bootloader...")
     reset.enter_bootloader(device)
 
     read_fn, write_fn = make_read_write(device, ep_in, ep_out)
     loader = rom_loader.RomLoader(read_fn, write_fn, chip or "esp32")
 
-    _log("[*] Syncing with ROM bootloader...")
+    _log("\033[1;34m[*]\033[0m Syncing with ROM bootloader...")
     if not loader.sync():
-        _log("[-] No response from bootloader. Checks:")
+        _log("\033[1;36m[-]\033[0m No response from bootloader. Checks:")
         if reset is uart_reset:
             _log("      - Is the CH340/CP2102/FTDI bridge wired to EN+GPIO0 (auto-reset)?")
             _log("      - Some boards need BOOT held + EN tapped manually.")
@@ -281,16 +285,16 @@ def cmd_probe(chip: str):
         _log("      - Try unplugging/replugging the OTG cable once.")
         reset.reset_to_app(device)
         sys.exit(1)
-    _log("[+] Bootloader is alive and synced.")
+    _log("\033[1;32m[+]\033[0m Bootloader is alive and synced.")
 
     chip = resolve_chip(loader, chip, reset is uart_reset)
 
     loader.spi_attach()
-    _log("[+] SPI flash attached.")
-    _log(f"[+] Chip target: {chip}")
+    _log("\033[1;32m[+]\033[0m SPI flash attached.")
+    _log(f"\033[1;32m[+]\033[0m Chip target: \033[1;32m{chip}\033[0m")
 
     reset.reset_to_app(device)
-    _log("[*] Reset back to application.")
+    _log("\033[1;34m[*]\033[0m Reset back to application.")
 
 
 def _read_bin(path: str) -> bytes:
@@ -313,34 +317,34 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
     for offset, path in targets:
         data = _read_bin(path)
         loaded.append((offset, path, data))
-        _log(f"[*] {path}: {len(data)} bytes -> offset 0x{offset:06X}")
+        _log(f"\033[1;34m[*]\033[0m \033[1;33m{path}\033[0m: \033[1;32m{len(data)} bytes\033[0m -> \033[1;36moffset 0x{offset:06X}\033[0m")
 
     device, ep_in, ep_out, reset = acquire_device()
-    _log("[*] Resetting into ROM bootloader...")
+    _log("\033[1;34m[*]\033[0m Resetting into ROM bootloader...")
     reset.enter_bootloader(device)
 
     read_fn, write_fn = make_read_write(device, ep_in, ep_out)
     loader = rom_loader.RomLoader(read_fn, write_fn, chip or "esp32")
 
-    _log("[*] Syncing with ROM bootloader...")
+    _log("\033[1;34m[*]\033[0m Syncing with ROM bootloader...")
     if not loader.sync():
-        _log("[-] Sync failed - device did not respond as a ROM bootloader.")
+        _log("\033[1;36m[-]\033[0m Sync failed - device did not respond as a ROM bootloader.")
         reset.reset_to_app(device)
         sys.exit(1)
-    _log("[+] Synced.")
+    _log("\033[1;32m[+]\033[0m Synced.")
 
     chip = resolve_chip(loader, chip, reset is uart_reset)
 
     loader.spi_attach()
-    _log("[+] SPI flash attached.")
+    _log("\033[1;32m[+]\033[0m SPI flash attached.")
 
     chunk_size = CHUNK
     stub = stub_flasher_data.STUBS.get(chip)
     if stub is not None:
-        _log("[*] Uploading stub flasher (faster block writes)...")
+        _log("\033[1;34m[*]\033[0m Uploading stub flasher (faster block writes)...")
         if loader.upload_stub(stub):
             chunk_size = rom_loader.STUB_FLASH_WRITE_SIZE
-            _log(f"[+] Stub running - switching to {chunk_size // 1024} KiB blocks.")
+            _log(f"\033[1;32m[+]\033[0m Stub running - switching to \033[1;32m{chunk_size // 1024}\033[0m KiB blocks.")
 
             # Bumping the block size alone doesn't help much if we're still
             # riding the bridge's original 115200 baud - that's ~11.5 KB/s
@@ -381,7 +385,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                     return loader.upload_stub(stub)
 
                 for candidate in (921600, 460800, 230400):
-                    _log(f"[*] Trying {candidate} baud...")
+                    _log(f"\033[1;34m[*]\033[0m Trying \033[0;33m{candidate}\033[0m baud...")
                     ok = False
                     try:
                         loader.change_baudrate(candidate)
@@ -392,47 +396,47 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                         ok = False
 
                     if ok:
-                        _log(f"[+] Baud rate raised to {candidate} and "
+                        _log(f"\033[1;32m[+]\033[0m Baud rate raised to \033[0;32m{candidate}\0330m and "
                              "verified - stub was still capped at the "
                              "bridge's original 115200 baud (~11.5 KB/s) "
                              "even after uploading.")
                         break
 
-                    _log(f"[!] {candidate} baud didn't hold - recovering "
-                         "session at 115200...")
+                    _log(f"\033[1;31m[!]\033[0m \033[0;33m{candidate}\033[0m baud didn't hold - recovering "
+                         "session at \033[0;32m115200\033[0m...")
                     if _rebuild_session_at_115200():
                         continue  # session is healthy again at 115200, try next candidate
                     else:
-                        _log("[-] Could not recover the bootloader session "
+                        _log("\033[1;36m[-]\033[0m Could not recover the bootloader session "
                              "after a failed baud switch. Unplug/replug the "
                              "board and re-run the command.")
                         reset.reset_to_app(device)
                         sys.exit(1)
                 else:
-                    _log("[!] No higher baud rate was usable - staying at "
+                    _log("\033[1;31m[!]\033[0m No higher baud rate was usable - staying at "
                          "115200. Flashing will still work, just slower.")
         else:
-            _log("[!] Stub upload failed - falling back to the slower "
+            _log("\033[1;31m[!]\033[0m Stub upload failed - falling back to the slower "
                  f"ROM-only path ({chunk_size} byte blocks). Flashing will "
                  "still work, just slower.")
     else:
-        _log(f"[!] No stub available for chip '{chip}' - using ROM-only path.")
+        _log(f"\033[1;31m[!]\033[0m No stub available for chip \033[1;33m'{chip}'\033[0m - using ROM-only path.")
 
     for offset, path, data in loaded:
         total = len(data)
-        _log(f"[*] --- {path} @ 0x{offset:06X} ---")
+        _log(f"\033[1;34m[*]\033[0m \033[1;32m{path}\033[0m @ \033[1;36m0x{offset:06X}\033[0m")
 
         if erase:
-            _log(f"[*] Erasing 0x{offset:06X}-0x{offset+total:06X} via ERASE_REGION...")
+            _log(f"\033[1;34m[*]\033[0m Erasing \033[1;36m0x{offset:06X}-0x{offset+total:06X}\033[0m via ERASE_REGION...")
             try:
                 loader.erase_region(offset, total)
-                _log("[+] Erase complete.")
+                _log("\033[1;32m[+]\033[0m Erase complete.")
             except rom_loader.RomLoaderError as e:
-                _log(f"[!] ERASE_REGION not supported by this ROM ({e}).")
+                _log(f"\033[1;31m[!]\033[0m ERASE_REGION not supported by this ROM ({e}).")
                 _log("    Continuing without it - flash_begin erases its own")
                 _log("    write range anyway, so this is not fatal.")
 
-        _log("[*] Starting flash_begin...")
+        _log("\033[1;34m[*]\033[0m Starting flash_begin...")
         loader.flash_begin(total, offset, block_size=chunk_size)
 
         seq = 0
@@ -446,39 +450,39 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                 seq += 1
                 _progress(sent, total)
         except rom_loader.RomLoaderError as e:
-            _log(f"\n[-] Flash write failed at byte {sent}/{total}: {e}")
+            _log(f"\n\033[1;36m[-]\033[0m Flash write failed at byte \033[1;31m{sent}\033[0m/\033[1;32m{total}\033[0m:\033[1;33m {e}")
             reset.reset_to_app(device)
             sys.exit(1)
 
         elapsed = time.time() - t0
         rate = (total / 1024) / elapsed if elapsed > 0 else 0
-        _log(f"[+] Wrote {total} bytes in {elapsed:.1f}s ({rate:.1f} KB/s)")
+        _log(f"\n\033[1;32m[+]\033[0m Wrote \033[1;33m{total}\033[0m bytes in {elapsed:.1f}s ({rate:.1f} KB/s)")
 
         if verify:
-            _log("[*] Verifying via on-device MD5...")
+            _log("\033[1;34m[*]\033[0m Verifying via on-device MD5...")
             import hashlib
             local_md5 = hashlib.md5(data).hexdigest()
             try:
                 remote_md5 = loader.flash_md5(offset, total)
             except rom_loader.RomLoaderError as e:
-                _log(f"[-] Could not read back MD5: {e}")
+                _log(f"\033[1;36m[-]\033[0m Could not read back MD5: {e}")
                 reset.reset_to_app(device)
                 sys.exit(1)
             if remote_md5 == local_md5:
-                _log(f"[+] Verify OK  (md5 {local_md5})")
+                _log(f"\033[1;32m[+]\033[0m Verify OK  (md5 {local_md5})")
             else:
-                _log(f"[-] Verify MISMATCH  local={local_md5}  device={remote_md5}")
+                _log(f"\033[1;36m[-]\033[0m Verify MISMATCH  local={local_md5}  device={remote_md5}")
                 reset.reset_to_app(device)
                 sys.exit(1)
 
     loader.flash_finish(reboot=not no_reboot)
     if no_reboot:
-        _log("[*] Staying in bootloader (--no-reboot set).")
+        _log("\033[1;34m[*]\033[0m Staying in bootloader (--no-reboot set).")
     else:
-        _log("[*] Rebooting into application...")
+        _log("\033[1;34m[*]\033[0m Rebooting into application...")
         time.sleep(0.3)
         reset.reset_to_app(device)
-    _log("[+] Done.")
+    _log("\033[1;32m[+]\033[0m Done.")
 
 
 def cmd_verify(chip: str, offset: int, path: str):
@@ -492,29 +496,29 @@ def cmd_verify(chip: str, offset: int, path: str):
     read_fn, write_fn = make_read_write(device, ep_in, ep_out)
     loader = rom_loader.RomLoader(read_fn, write_fn, chip or "esp32")
 
-    _log("[*] Syncing with ROM bootloader...")
+    _log("\033[1;34m[*]\033[0m Syncing with ROM bootloader...")
     if not loader.sync():
-        _log("[-] Sync failed.")
+        _log("\033[1;36m[-]\033[0m Sync failed.")
         reset.reset_to_app(device)
         sys.exit(1)
 
     chip = resolve_chip(loader, chip, reset is uart_reset)
     loader.spi_attach()
 
-    _log(f"[*] Reading back MD5 of {total} bytes @ 0x{offset:06X}...")
+    _log(f"\033[1;34m[*]\033[0m Reading back MD5 of {total} bytes @ 0x{offset:06X}...")
     remote_md5 = loader.flash_md5(offset, total)
     reset.reset_to_app(device)
 
     if remote_md5 == local_md5:
-        _log(f"[+] MATCH  (md5 {local_md5})")
+        _log(f"\033[1;32m[+]\033[0m MATCH  (md5 {local_md5})")
     else:
-        _log(f"[-] MISMATCH  local={local_md5}  device={remote_md5}")
+        _log(f"\033[1;36m[-]\033[0m MISMATCH  local={local_md5}  device={remote_md5}")
         sys.exit(1)
 
 
 def cmd_erase_info(chip: str):
     label = chip if chip else "(no --chip given)"
-    _log(f"[*] {label}: this build does not implement full-chip erase.")
+    _log(f"\033[1;34m[*]\033[0m {label}: this build does not implement full-chip erase.")
     _log("    'write --erase' will erase exactly the bytes about to be")
     _log("    overwritten (via ERASE_REGION) before flashing, if the ROM")
     _log("    supports it - it falls back silently to flash_begin's own")
@@ -534,6 +538,8 @@ def build_parser():
                                  description="Termux-native .bin flasher for ESP32-S3/C3/S2 (native USB) "
                                               "and classic ESP32/ESP8266 boards behind a CH340/CP2102/FTDI "
                                               "UART bridge - no root, no esptool.py.")
+    p.add_argument("--version", action="version",
+                    version=f"nrflash {__version__} - {__author__} <{__url__}>")
     sub = p.add_subparsers(dest="action", required=True)
 
     # --chip is optional for probe/write/verify - if omitted, the tool syncs
@@ -673,14 +679,14 @@ def bootstrap(argv_tail: list) -> None:
     try:
         device_path = usb_device.auto_detect_device()
     except RuntimeError as e:
-        _log(f"[-] {e}")
+        _log(f"\033[1;36m[-]\033[0m {e}")
         sys.exit(1)
-    _log(f"[+] Found device: {device_path}")
+    _log(f"\033[1;32m[+]\033[0m Found device: \033[1;32m{device_path}\033[0m")
 
-    _log("[*] Requesting USB permission (tap Allow on your phone)...")
+    _log("\033[1;34m[*]\033[0m Requesting USB permission (tap Allow on your phone)...")
     granted = usb_device.request_permission(device_path)
     if not granted:
-        _log("[-] Permission denied or timed out.")
+        _log("\033[1;36m[-]\033[0m Permission denied or timed out.")
         sys.exit(1)
 
     # Re-invoke via `python3 -m nrflash.cli ...` rather than a hardcoded
@@ -745,13 +751,13 @@ def _dispatch(args):
         elif args.action == "erase-info":
             cmd_erase_info(args.chip)
     except RuntimeError as e:
-        _log(f"[-] {e}")
+        _log(f"\033[1;36m[-]\033[0m {e}")
         sys.exit(1)
     except FileNotFoundError as e:
-        _log(f"[-] {e}")
+        _log(f"\033[1;36m[-]\033[0m {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        _log("\n[-] Interrupted.")
+        _log("\n\033[1;36m[-]\033[0m Interrupted.")
         sys.exit(130)
 
 
