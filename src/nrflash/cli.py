@@ -56,8 +56,8 @@ __author__ = "7wp81x"
 __url__ = "https://github.com/7wp81x/Termux-ESP-Flasher"
 
 CHUNK = rom_loader.FLASH_WRITE_SIZE  # ROM-only fallback block size; cmd_write
-# switches to rom_loader.STUB_FLASH_WRITE_SIZE for the session if stub
-# upload succeeds.
+# switches to rom_loader.stub_flash_write_size(chip) for the session if
+# stub upload succeeds (0x800 on ESP32-S2's USB-OTG, 0x4000 elsewhere).
 CHIP_CHOICES = ("esp32s3", "esp32c3", "esp32s2", "esp32", "esp8266")
 
 # Log/state data lives under the user's home, not next to the installed
@@ -365,7 +365,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
     elif stub is not None:
         _log("\033[1;34m[*]\033[0m Uploading stub flasher (faster block writes)...")
         if loader.upload_stub(stub):
-            chunk_size = rom_loader.STUB_FLASH_WRITE_SIZE
+            chunk_size = rom_loader.stub_flash_write_size(chip)
             _log(f"\033[1;32m[+]\033[0m Stub running - switching to \033[1;32m{chunk_size // 1024}\033[0m KiB blocks.")
 
             # Bumping the block size alone doesn't help much if we're still

@@ -67,11 +67,39 @@ FLASH_WRITE_SIZE = 0x400  # 1 KiB per FLASH_DATA packet - required for ROM-only
 
 STUB_FLASH_WRITE_SIZE = 0x4000  # 16 KiB - safe once the stub is running,
 # since the stub has a much larger RAM receive buffer than the ROM does.
+# NOT safe on ESP32-S2's native USB-OTG transport - see USB_OTG_* below.
 
 ESP_RAM_BLOCK = 0x1800  # 6 KiB - chunk size for MEM_DATA uploads while
 # pushing the stub itself into RAM (matches real esptool; this is a
 # separate, smaller limit than STUB_FLASH_WRITE_SIZE, which only applies
 # once the stub is already running and handling FLASH_DATA).
+
+# ESP32-S2's native USB-OTG peripheral can't reliably absorb the standard
+# 0x1800/0x4000 block sizes above: its internal buffering silently
+# corrupts/drops data past 0x800 bytes per transfer, both during the stub
+# RAM upload (MEM_DATA) and the post-stub flash write (FLASH_DATA) phase.
+# Real esptool caps both to 0x800 for exactly this case (see
+# uses_usb_otg()/_post_connect() in esptool's loader.py - re-derived
+# here from public source, no code copied). This silent-corruption-with-
+# ACK behavior is why S2 stub uploads/flashes failed with the old fixed
+# sizes: the chip acks blocks it never actually buffered correctly.
+USB_OTG_RAM_BLOCK = 0x800
+USB_OTG_FLASH_WRITE_SIZE = 0x800
+
+# Chips whose transport is the raw USB-OTG peripheral rather than
+# USB-Serial-JTAG (which behaves like a real UART with flow control and
+# doesn't need the reduction). ESP32-S3 also has a USB-OTG mode, but this
+# tool only ever talks to S3 over USB-Serial-JTAG (PID 303A:1001), so
+# only S2 needs the reduction in practice.
+USB_OTG_CHIPS = {"esp32s2"}
+
+
+def ram_block_size(chip: str) -> int:
+    return USB_OTG_RAM_BLOCK if chip in USB_OTG_CHIPS else ESP_RAM_BLOCK
+
+
+def stub_flash_write_size(chip: str) -> int:
+    return USB_OTG_FLASH_WRITE_SIZE if chip in USB_OTG_CHIPS else STUB_FLASH_WRITE_SIZE
 
 # Per-chip parameters needed before flash_begin can succeed.
 # (efuse/uart base addrs are not needed in ROM-only ASCII-free flashing path;
@@ -319,12 +347,13 @@ class RomLoader:
     def _upload_segment(self, data: bytes, offset: int):
         if not data:
             return
+        block_size = ram_block_size(self.chip)
         length = len(data)
-        blocks = (length + ESP_RAM_BLOCK - 1) // ESP_RAM_BLOCK
-        self.mem_begin(length, blocks, ESP_RAM_BLOCK, offset)
+        blocks = (length + block_size - 1) // block_size
+        self.mem_begin(length, blocks, block_size, offset)
         for seq in range(blocks):
-            start = seq * ESP_RAM_BLOCK
-            self.mem_block(data[start:start + ESP_RAM_BLOCK], seq)
+            start = seq * block_size
+            self.mem_block(data[start:start + block_size], seq)
 
     def upload_stub(self, stub: dict) -> bool:
         """
