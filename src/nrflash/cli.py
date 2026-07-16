@@ -43,6 +43,7 @@ import os
 import sys
 import time
 import traceback
+import usb.core
 
 import espbridge as usb_device
 from . import rom_loader
@@ -50,7 +51,7 @@ from . import cdc_reset
 from . import uart_reset
 from . import stub_flasher_data
 
-__version__ = "1.3.1"
+__version__ = "1.4.1"
 __author__ = "7wp81x"
 __url__ = "https://github.com/7wp81x/Termux-ESP-Flasher"
 
@@ -326,7 +327,7 @@ def _read_bin(path: str) -> bytes:
         return f.read()
 
 
-def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bool):
+def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bool, no_stub: bool = False):
     """
     targets: list of (offset:int, path:str) tuples, already sorted by offset.
     Flashes each one in a single sync/spi_attach session - i.e. one USB
@@ -358,8 +359,10 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
     _log("\033[1;32m[+]\033[0m SPI flash attached.")
 
     chunk_size = CHUNK
-    stub = stub_flasher_data.STUBS.get(chip)
-    if stub is not None:
+    stub = None if no_stub else stub_flasher_data.STUBS.get(chip)
+    if no_stub:
+        _log("\033[1;34m[*]\033[0m --no-stub set - using the plain ROM loader path.")
+    elif stub is not None:
         _log("\033[1;34m[*]\033[0m Uploading stub flasher (faster block writes)...")
         if loader.upload_stub(stub):
             chunk_size = rom_loader.STUB_FLASH_WRITE_SIZE
@@ -434,9 +437,21 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                     _log("\033[1;31m[!]\033[0m No higher baud rate was usable - staying at "
                          "115200. Flashing will still work, just slower.")
         else:
-            _log("\033[1;31m[!]\033[0m Stub upload failed - falling back to the slower "
-                 f"ROM-only path ({chunk_size} byte blocks). Flashing will "
-                 "still work, just slower.")
+            _log("\033[1;31m[!]\033[0m Stub upload failed - the chip may have "
+                 "already jumped out of the ROM bootloader while trying to "
+                 "run it (mem_finish() executes unconditionally, even when "
+                 "the stub never answers back). Re-entering the bootloader "
+                 "to get a clean session before falling back...")
+            if not enter_bootloader_and_sync(device, loader, reset):
+                _log("\033[1;36m[-]\033[0m Could not re-enter the bootloader "
+                     "after the failed stub upload. Unplug/replug the board "
+                     "(hold BOOT while plugging in, if this chip has no "
+                     "auto-reset circuit) and re-run the command.")
+                sys.exit(1)
+            loader.spi_attach()
+            _log(f"\033[1;31m[!]\033[0m Falling back to the slower ROM-only "
+                 f"path ({chunk_size} byte blocks). Flashing will still "
+                 "work, just slower.")
     else:
         _log(f"\033[1;31m[!]\033[0m No stub available for chip \033[1;33m'{chip}'\033[0m - using ROM-only path.")
 
@@ -499,7 +514,18 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
     else:
         _log("\033[1;34m[*]\033[0m Rebooting into application...")
         time.sleep(0.3)
-        reset.reset_to_app(device)
+        try:
+            reset.reset_to_app(device)
+        except usb.core.USBError:
+            # flash_finish(reboot=True) already told the ROM to reboot -
+            # on native USB chips (S2/S3/C3) that reboot re-initializes
+            # the USB peripheral, which disconnects/re-enumerates the
+            # device out from under us. This extra DTR/RTS pulse is only
+            # needed as a fallback for ROMs/boards that don't reliably
+            # act on flash_finish's own reboot flag - if the device is
+            # already gone, the reboot already happened, so there's
+            # nothing left to signal and nothing to worry about.
+            pass
     _log("\033[1;32m[+]\033[0m Done.")
 
 
@@ -587,6 +613,13 @@ def build_parser():
                                "uses the OFFSET:FILE form instead.")
     p_write.add_argument("--verify", action="store_true", help="MD5-verify each file after writing.")
     p_write.add_argument("--no-reboot", action="store_true", help="Stay in bootloader after flashing.")
+    p_write.add_argument("--no-stub", action="store_true",
+                          help="Skip the RAM stub entirely and use the plain ROM loader "
+                               "(1024 byte blocks, slower). Recommended on boards with no "
+                               "auto-reset circuit (native-USB S2 boards with only a BOOT "
+                               "button): a failed stub handshake jumps the chip out of the "
+                               "ROM bootloader with no way to re-enter it except physically "
+                               "re-holding BOOT, so it's safer to never attempt the jump.")
     p_write.add_argument("--erase", action="store_true",
                           help="Explicitly erase exactly [offset, offset+len(file)) via "
                                "ERASE_REGION before writing each file, instead of relying "
@@ -771,7 +804,7 @@ def _dispatch(args):
             cmd_probe(args.chip)
         elif args.action == "write":
             targets = _parse_write_targets(args.files, args.offset)
-            cmd_write(args.chip, targets, args.verify, args.no_reboot, args.erase)
+            cmd_write(args.chip, targets, args.verify, args.no_reboot, args.erase, args.no_stub)
         elif args.action == "verify":
             cmd_verify(args.chip, _parse_offset(args.offset), args.file)
         elif args.action == "erase-info":
