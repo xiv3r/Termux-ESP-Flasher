@@ -402,8 +402,11 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                     usb_device.set_uart_bridge_baud(device, 115200)
                     if not enter_bootloader_and_sync(device, loader, reset):
                         return False
-                    loader.spi_attach()
-                    return loader.upload_stub(stub)
+                    try:
+                        loader.spi_attach()
+                        return loader.upload_stub(stub)
+                    except rom_loader.RomLoaderError:
+                        return False
 
                 for candidate in (921600, 460800, 230400):
                     _log(f"\033[1;34m[*]\033[0m Trying \033[0;33m{candidate}\033[0m baud...")
