@@ -1,7 +1,13 @@
 # Termux-ESP-Flasher
 
-A Termux-native `.bin` flasher for ESP32 boards — no root, no
-`esptool.py` subprocess, no pyserial.
+**Flash ESP32 / ESP8266 firmware from Android using Termux — no root
+required.** A Termux-native `.bin` flasher that talks directly to the
+chip's USB endpoints, with no `esptool.py` subprocess and no pyserial.
+
+If you've hit the wall where **Web Serial doesn't work in Chrome for
+Android** (it's desktop-only) and `esptool.py` can't find a
+`/dev/ttyUSB*` node because Termux has no root, this is the tool built
+for exactly that gap.
 
 Covers **two** device families, auto-detected from the USB VID:PID:
 
@@ -130,6 +136,7 @@ Check what you've got installed with `nrflash --version`. If you installed
 from source instead of pip, `git pull` then `pip install .` again to pick
 up the update.
 
+## Usage
 
 ```
 # --chip is optional everywhere except erase-info - omit it to auto-detect
