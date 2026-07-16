@@ -428,11 +428,24 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                     if _rebuild_session_at_115200():
                         continue  # session is healthy again at 115200, try next candidate
                     else:
-                        _log("\033[1;36m[-]\033[0m Could not recover the bootloader session "
-                             "after a failed baud switch. Unplug/replug the "
-                             "board and re-run the command.")
-                        reset.reset_to_app(device)
-                        sys.exit(1)
+                        _log("\033[1;31m[!]\033[0m Could not recover the stub session after "
+                             "a failed baud switch (bridge chip likely wedged talking "
+                             "past the device at the new rate). Re-entering the "
+                             "bootloader from scratch and falling back to the slower "
+                             "ROM-only path rather than aborting the flash...")
+                        usb_device.set_uart_bridge_baud(device, 115200)
+                        if not enter_bootloader_and_sync(device, loader, reset):
+                            _log("\033[1;36m[-]\033[0m Could not re-enter the bootloader "
+                                 "after a failed baud recovery. Unplug/replug the board "
+                                 "and re-run the command.")
+                            sys.exit(1)
+                        loader.spi_attach()
+                        chunk_size = CHUNK
+                        stub = None
+                        _log(f"\033[1;31m[!]\033[0m Falling back to the ROM-only path "
+                             f"({chunk_size} byte blocks). Flashing will still work, "
+                             "just slower.")
+                        break
                 else:
                     _log("\033[1;31m[!]\033[0m No higher baud rate was usable - staying at "
                          "115200. Flashing will still work, just slower.")
@@ -797,7 +810,16 @@ def _dispatch(args):
 {E}[1;32m |_|\_|_|_\{E}[1;36m_| |_\__,_/__/_||_| {E}[1;32mv{version}{E}[0m
 """.format(E="\x1b", version=__version__)
 
-    print(logo)
+    # Route through _log(), not a bare print(): when running as the
+    # fd-wrapped no-root Termux child, stdout is dup2'd into LOG_FILE and
+    # every other line goes out via _log()'s explicit open()/write(), which
+    # hits the file immediately. A raw print() here instead lands in
+    # Python's stdout buffer (block-buffered, since the fd is a file, not
+    # a tty) and only gets flushed later - which is exactly why the logo
+    # was showing up mid-run instead of at the very top. _log() also
+    # already does the right thing for the non-child/root case (prints
+    # directly), so this fixes ordering for both paths.
+    _log(logo)
 
     try:
         if args.action == "probe":
