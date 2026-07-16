@@ -131,7 +131,7 @@ from source instead of pip, `git pull` then `pip install .` again to pick
 up the update.
 
 
-
+```
 # --chip is optional everywhere except erase-info - omit it to auto-detect
 nrflash probe
 nrflash write --offset 0x0 firmware.bin
