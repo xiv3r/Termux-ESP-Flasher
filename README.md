@@ -112,9 +112,25 @@ pip install .
 ```
 </details>
 
-## Usage
+## Updating
 
 ```bash
+pip install --upgrade nrflash
+```
+
+If pip stubbornly reinstalls the same old version (common right after a
+fresh release, since pip caches wheels/metadata), force it to skip the
+cache:
+
+```bash
+pip install --upgrade --no-cache-dir nrflash
+```
+
+Check what you've got installed with `nrflash --version`. If you installed
+from source instead of pip, `git pull` then `pip install .` again to pick
+up the update.
+
+
 
 # --chip is optional everywhere except erase-info - omit it to auto-detect
 nrflash probe
