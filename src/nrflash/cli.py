@@ -51,7 +51,7 @@ from . import cdc_reset
 from . import uart_reset
 from . import stub_flasher_data
 
-__version__ = "1.4.1"
+__version__ = "1.2.0"
 __author__ = "7wp81x"
 __url__ = "https://github.com/7wp81x/Termux-ESP-Flasher"
 
