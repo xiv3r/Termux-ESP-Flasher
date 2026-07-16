@@ -327,6 +327,24 @@ def _read_bin(path: str) -> bytes:
         return f.read()
 
 
+def _short_path(path: str, max_len: int = 40) -> str:
+    """
+    Shorten a path for display in log lines. Termux paths in particular
+    (/data/data/com.termux/files/home/...) are long enough to wrap the
+    terminal and bury the actually-useful part (filename + offset).
+
+    - Home dir prefix -> '~' (matches what the shell itself would show).
+    - Still too long after that -> collapse to '.../<filename>'.
+    """
+    home = os.path.expanduser("~")
+    display = path
+    if home and display.startswith(home):
+        display = "~" + display[len(home):]
+    if len(display) > max_len:
+        display = ".../" + os.path.basename(display)
+    return display
+
+
 def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bool, no_stub: bool = False):
     """
     targets: list of (offset:int, path:str) tuples, already sorted by offset.
@@ -340,7 +358,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
     for offset, path in targets:
         data = _read_bin(path)
         loaded.append((offset, path, data))
-        _log(f"\033[1;34m[*]\033[0m \033[1;33m{path}\033[0m: \033[1;32m{len(data)} bytes\033[0m -> \033[1;36moffset 0x{offset:06X}\033[0m")
+        _log(f"\033[1;34m[*]\033[0m \033[1;33m{_short_path(path)}\033[0m: \033[1;32m{len(data)} bytes\033[0m -> \033[1;36moffset 0x{offset:06X}\033[0m")
 
     device, ep_in, ep_out, reset = acquire_device()
     read_fn, write_fn = make_read_write(device, ep_in, ep_out)
@@ -402,6 +420,16 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                     usb_device.set_uart_bridge_baud(device, 115200)
                     if not enter_bootloader_and_sync(device, loader, reset):
                         return False
+                    # spi_attach()/upload_stub() talk to the ROM over SLIP and
+                    # raise rom_loader.RomLoaderError on timeout - a bare call
+                    # here used to escape uncaught straight past every retry
+                    # loop in this function up to main()'s top-level handler,
+                    # aborting the whole flash instead of falling back to
+                    # ROM-only. A ROM that just resynced after a failed baud
+                    # switch (esp. CH340<->ESP8266) is exactly the case that
+                    # sometimes needs another beat before it'll answer
+                    # spi_attach - treat that the same as "recovery failed"
+                    # so the caller's existing fallback path handles it.
                     try:
                         loader.spi_attach()
                         return loader.upload_stub(stub)
@@ -442,7 +470,28 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
                                  "after a failed baud recovery. Unplug/replug the board "
                                  "and re-run the command.")
                             sys.exit(1)
-                        loader.spi_attach()
+                        # Same reasoning as the try/except in
+                        # _rebuild_session_at_115200() above: a bare
+                        # spi_attach() here can raise RomLoaderError on a ROM
+                        # that just resynced and needs another moment before
+                        # it'll answer, which used to crash the whole write
+                        # instead of just re-trying the reset once more.
+                        try:
+                            loader.spi_attach()
+                        except rom_loader.RomLoaderError:
+                            _log("\033[1;31m[!]\033[0m SPI attach failed right after resync - "
+                                 "giving the bootloader one more reset before giving up...")
+                            if not enter_bootloader_and_sync(device, loader, reset):
+                                _log("\033[1;36m[-]\033[0m Could not re-enter the bootloader "
+                                     "after a failed baud recovery. Unplug/replug the board "
+                                     "and re-run the command.")
+                                sys.exit(1)
+                            try:
+                                loader.spi_attach()
+                            except rom_loader.RomLoaderError as e:
+                                _log(f"\033[1;36m[-]\033[0m SPI attach still failing: {e}. "
+                                     "Try again with --no-stub.")
+                                sys.exit(1)
                         chunk_size = CHUNK
                         stub = None
                         _log(f"\033[1;31m[!]\033[0m Falling back to the ROM-only path "
@@ -473,7 +522,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
 
     for offset, path, data in loaded:
         total = len(data)
-        _log(f"\033[1;34m[*]\033[0m --- \033[1;32m{path}\033[0m @ \033[1;36m0x{offset:06X}\033[0m ---")
+        _log(f"\033[1;34m[*]\033[0m \033[1;32m{_short_path(path)}\033[0m @ \033[1;36m0x{offset:06X}\033[0m")
 
         if erase:
             _log(f"\033[1;34m[*]\033[0m Erasing \033[1;36m0x{offset:06X}-0x{offset+total:06X}\033[0m via ERASE_REGION...")
