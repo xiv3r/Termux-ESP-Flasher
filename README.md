@@ -44,7 +44,12 @@ reach.
   real ESP-IDF RAM stub after syncing, switching from 1 KiB ROM-only
   blocks to 16 KiB stub blocks. Falls back to ROM-only if the stub
   upload doesn't succeed for some reason — flashing still works, just
-  slower.
+  slower. Pass `--no-stub` to skip the RAM stub entirely and stay on the
+  plain ROM loader from the start. This is recommended on boards with no
+  auto-reset circuit (e.g. native-USB S2 boards with only a BOOT button):
+  a failed stub handshake jumps the chip out of the ROM bootloader with
+  no way back in except physically re-holding BOOT, so on those boards
+  it's safer to never attempt the jump at all.
 - **Automatic baud renegotiation on UART-bridge boards.** Once the stub
   is running, the tool steps up through 921600 → 460800 → 230400 baud,
   verifying each one actually holds (a cheap `sync()`) before trusting
@@ -135,6 +140,10 @@ nrflash write --offset 0x0 firmware.bin --erase
 
 # Stay in the bootloader after flashing instead of rebooting
 nrflash write --offset 0x0 firmware.bin --no-reboot
+
+# Skip the RAM stub and use the plain ROM loader (slower, but safer on
+# boards with no auto-reset circuit - see --no-stub note below)
+nrflash write --offset 0x0 firmware.bin --no-stub
 ```
 
 First run on no-root Termux pops the same USB permission dialog every
