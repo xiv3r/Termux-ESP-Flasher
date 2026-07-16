@@ -101,7 +101,7 @@ def _progress(done: int, total: int, label: str = "Flashing"):
     bar_len = 24
     filled = int(bar_len * pct / 100)
     bar = "#" * filled + "-" * (bar_len - filled)
-    sys.stdout.write(f"\r{label} [{bar}] {pct:3d}%  ({done}/{total} bytes)")
+    sys.stdout.write(f"\r\033[1;36m[-]\033[0m {label} [\033[1;32m{bar}\033[0m] {pct:3d}%  (\033[1;33m{done}\033[0m/\033[1;32m{total}\033[0m bytes)")
     sys.stdout.flush()
     if done >= total:
         sys.stdout.write("\n")
@@ -474,7 +474,7 @@ def cmd_write(chip: str, targets: list, verify: bool, no_reboot: bool, erase: bo
 
         elapsed = time.time() - t0
         rate = (total / 1024) / elapsed if elapsed > 0 else 0
-        _log(f"\033[1;32m[+]\033[0m Wrote \033[1;33m{total}\033[0m bytes in {elapsed:.1f}s ({rate:.1f} KB/s)")
+        _log(f"\n\033[1;32m[+]\033[0m Wrote \033[1;33m{total}\033[0m bytes in {elapsed:.1f}s ({rate:.1f} KB/s)")
 
         if verify:
             _log("\033[1;34m[*]\033[0m Verifying via on-device MD5...")
@@ -757,6 +757,15 @@ def main():
 
 
 def _dispatch(args):
+
+    logo = f"""
+\033[1;32m  _  _ ___ \033[1;36m___ _         _    \033[0m
+\033[1;32m | \| | _ \\033[1;36m __| |__ _ __| |_  \033[0m
+\033[1;32m | .` |   /\033[1;36m _|| / _` (_-< ' \ \033[0m
+\033[1;32m |_|\_|_|_\\033[1;36m_| |_\__,_/__/_||_|\033[1;32m v{__version__}\033[0m
+"""
+    print(logo)
+
     try:
         if args.action == "probe":
             cmd_probe(args.chip)
